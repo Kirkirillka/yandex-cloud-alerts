@@ -7,7 +7,7 @@ metadata:
     app: kube-prometheus-stack
 spec:
   groups:
-    - name: managed-database-general-rules
+    - name: yandex-cloud-managed-database-general-rules
       rules:
       - alert: YandexCloudManagedDatabaseOOMDetected
         expr: rate(oom_count [5m]) > 0
@@ -17,32 +17,37 @@ spec:
           component: database
           severity: critical
         annotations:
-          summary: Detected OOM activity (instance {{ $labels.instance }})
+          summary: Detected OOM activity (instance {{ $labels.host }})
           description: "Detected OOM activity\n  VALUE = {{ $value }}"
       - alert: YandexCloudManagedDatabaseHighMemoryConsumption
-        expr: avg(mem_free_bytes) by (host) / avg(mem_total_bytes) by (host) * 100 < 30
+        expr: 100 - avg(mem_active_bytes) by (host) / avg(mem_total_bytes) by (host) * 100 < 30
         for: 1m
         labels:
           provider: yandex.cloud
           component: database
+          system: memory
+          severity: info
+        annotations:
+          summary: Less than 30% of memory is available (instance {{ $labels.host }})
+          description: "Detected less than 30% of memory is available\n  VALUE = {{ $value }}"
+      - alert: YandexCloudManagedDatabaseOutOfMemory
+        expr: 100 - avg(mem_active_bytes) by (host) / avg(mem_total_bytes) by (host) * 100 < 10
+        for: 1m
+        labels:
+          provider: yandex.cloud
+          component: database
+          system: memory
           severity: warning
         annotations:
-          summary: Less than 30% of memory is free (instance {{ $labels.instance }})
-          description: "Detected less than 30% of memory is free\n  VALUE = {{ $value }}"
-      - alert: YandexCloudManagedDatabaseOutOfMemory
-        expr: avg(mem_free_bytes) by (host) / avg(mem_total_bytes) by (host) * 100 < 10
-        for: 1m
-        labels:
-          provider: yandex.cloud
-          component: database
-          severity: critical
-        annotations:
-          summary: Less than 10% of memory is free (instance {{ $labels.instance }})
-          description: "Detected less than 10% of memory is free\n  VALUE = {{ $value }}"
+          summary: Less than 10% of memory is available (instance {{ $labels.host }})
+          description: "Detected less than 10% of memory is available\n  VALUE = {{ $value }}"
       - alert: YandexCloudManagedDatabasHostCpuIsUnderutilized
         expr: (100 - (cpu_idle) < 20)
         for: 1w
         labels:
+          provider: yandex.cloud
+          component: database
+          system: cpu
           severity: info
         annotations:
           summary: Host CPU is underutilized (instance {{ $labels.host }})
@@ -51,12 +56,15 @@ spec:
         expr: avg by (host) (cpu_iowait) > 10
         for: 0m
         labels:
+          provider: yandex.cloud
+          component: database
+          system: cpu
           severity: warning
         annotations:
-          summary: Host CPU high iowait (instance {{ $labels.instance }})
+          summary: Host CPU high iowait (instance {{ $labels.host }})
           description: "CPU iowait > 10%. A high iowait means that you are disk or network bound.\n  VALUE = {{ $value }}\n  LABELS = {{ $labels }}"
 
-    - name: managed-database-replication-rules
+    - name: yandex-cloud-managed-database-replication-rules
       rules:
       - alert: YandexCloudManagedDatabaseReplicationLag
         expr: postgres_replication_lag > 1
@@ -64,21 +72,22 @@ spec:
         labels:
           provider: yandex.cloud
           component: database
+          system: replication
           severity: high
         annotations:
-          summary: Database replication lag is more than 1s (instance {{ $labels.instance }})
+          summary: Database replication lag is more than 1s (instance {{ $labels.host }})
           description: "Detected replication lag more than 1s\n  VALUE = {{ $value }}"
-    - name: managed-database-pooler-rules
+    - name: yandex-cloud-managed-database-pooler-rules
       rules:
       - alert: YandexCloudManagedDatabasePoolerOffline
         expr: absent(pooler_is_alive == 1)
-        for: 0m
+        for: 3m
         labels:
           provider: yandex.cloud
           component: database
           severity: critical
         annotations:
-          summary: Database Pooler is offline (instance {{ $labels.instance }})
+          summary: Database Pooler is offline (instance {{ $labels.host }})
           description: "Detected database pooler is offline\n  VALUE = {{ $value }}"
       - alert: YandexCloudManagedDatabasePoolerLongAvgQueryTime
         expr: avg_over_time(pooler_avg_query_time[5m]) > 60
@@ -88,9 +97,9 @@ spec:
           component: database
           severity: warning
         annotations:
-          summary: Database Pooler Avg Query is processed longer than 60s (instance {{ $labels.instance }})
+          summary: Database Pooler Avg Query is processed longer than 60s (instance {{ $labels.host }})
           description: "Detected avg query time longer than 60s\n  VALUE = {{ $value }}"
-    - name: managed-database-storage-rules
+    - name: yandex-cloud-managed-database-storage-rules
       rules:
       - alert: YandexCloudManagedDatabaseFreeSpaceLessThan20Percent
         expr: avg(disk_free_bytes / disk_total_bytes) by (host) * 100 < 20
@@ -100,7 +109,7 @@ spec:
           component: database
           severity: warning
         annotations:
-          summary: Database has less than 20% free space (instance {{ $labels.instance }})
+          summary: Database has less than 20% free space (instance {{ $labels.host }})
           description: "Detected less than 20% of available space\n  VALUE = {{ $value }}"
       - alert: YandexCloudManagedDatabaseFreeSpaceLessThan10Percent
         expr: avg(disk_free_bytes / disk_total_bytes) by (host) * 100 < 10
@@ -110,5 +119,25 @@ spec:
           component: database
           severity: critical
         annotations:
-          summary: Database has less than 10% free space (instance {{ $labels.instance }})
+          summary: Database has less than 10% free space (instance {{ $labels.host }})
           description: "Detected less than 10% of available space\n  VALUE = {{ $value }}"
+      - alert: YandexCloudManagedDatabaseIOLongRead
+        expr: io_avg_read_time > 200
+        for: 5m
+        labels:
+          provider: yandex.cloud
+          component: database
+          severity: high
+        annotations:
+          summary: Database read I/O is longer than 200ms (instance {{ $labels.host }})
+          description: "Detected read I/O longer than 200ms\n  VALUE = {{ $value }}"
+      - alert: YandexCloudManagedDatabaseIOLongWrite
+        expr: io_avg_write_time > 200
+        for: 5m
+        labels:
+          provider: yandex.cloud
+          component: database
+          severity: high
+        annotations:
+          summary: Database write I/O is longer than 200ms (instance {{ $labels.host }})
+          description: "Detected write I/O longer than 200ms\n  VALUE = {{ $value }}"
